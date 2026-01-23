@@ -6,6 +6,7 @@ from fsrcnn.fsrcnn import FSRCNN_SMALL_PRETRAIN, FSRCNN_BIG_PRETRAIN
 from functools import partial
 import torch.nn as nn
 from ninasr_small import NinaSR 
+import sys
 
 def fsrcnn_small(scale, pretrained):
     model = FSRCNN_SMALL_PRETRAIN(scale=scale)
@@ -30,14 +31,14 @@ libtest.get_frame_height.restype = ctypes.c_int
 libtest.get_frame_pitch.restype = ctypes.c_int
 libtest.get_gpu_to_cpu_time.restype = ctypes.c_int
 libtest.init()
-print("Starting testing")
+print("Starting testing", sys.stderr)
 device = torch.device("cuda")
 torch.backends.cudnn.benchmark = True
 height, width, pitch = libtest.get_frame_height(), libtest.get_frame_width(), libtest.get_frame_pitch()
-print(height, width, pitch)
+print(height, width, pitch, file=sys.stderr)
+print("model,no upscaling,no uspcaling std,upscaling,upscaling std")
 for name, constructor in MODELS:
     model = torch.compile(constructor(scale=2, pretrained = False).to(device).eval())
-    print("Testing", name)
 
     def to_tensor_optimized(frame_ptr, height, width, pitch):
         address = ctypes.cast(frame_ptr, ctypes.c_void_p).value
@@ -87,5 +88,7 @@ for name, constructor in MODELS:
         frame_times_upscaling[frame_index] = (monotonic_ns() - start) / 1e6
         frame_index = (frame_index + 1) % buffer_size
 
-    print(name, "No Upscaling:", frame_times_no_upscaling.mean(), frame_times_no_upscaling.std())
-    print(name, "Upscaling:", frame_times_upscaling.mean(), frame_times_upscaling.std())
+    print(name, 
+          frame_times_no_upscaling.mean(), frame_times_no_upscaling.std(),
+          frame_times_upscaling.mean(), frame_times_upscaling.std(), sep=",")
+
