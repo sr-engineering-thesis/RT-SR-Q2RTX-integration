@@ -19,10 +19,7 @@ MODELS = [
     ("carn", carn),
     ("ninasr_b0", ninasr_b0),
     ("small", ninasr_small),
-    ("edsr_baseline", edsr_baseline),
     ("edsr_r16f64", edsr_r16f64),
-    ("carn_m", carn_m),
-    ("rcan", rcan),
 ]
 
 sleep(5)
@@ -39,7 +36,7 @@ torch.backends.cudnn.benchmark = True
 height, width, pitch = libtest.get_frame_height(), libtest.get_frame_width(), libtest.get_frame_pitch()
 print(height, width, pitch)
 for name, constructor in MODELS:
-    model = constructor(scale=4, pretrained = False).to(device).half().eval()
+    model = torch.compile(constructor(scale=2, pretrained = False).to(device).eval())
     print("Testing", name)
 
     def to_tensor_optimized(frame_ptr, height, width, pitch):
@@ -52,8 +49,8 @@ for name, constructor in MODELS:
             .view(height, pitch // 4, 4)[:, :width, :3] # Remove padding/Alpha on CPU view
             .to(device, non_blocking=True)               # Send 1-byte pixels to GPU
             .permute(2, 0, 1)                            # HWC -> CHW (Instant on GPU)
+            .half()
             .unsqueeze(0)                                # Add batch dim
-            .to(torch.half)                              # Convert to FP16 on GPU
             .div_(255.0)                                 # Normalize in-place
         )
 
@@ -82,7 +79,8 @@ for name, constructor in MODELS:
         libtest.frame_post()
 
         with torch.no_grad():
-            output = model(input_tensor)
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                output = model(input_tensor)
 
         processed = output.mul_(255).clamp_(0, 255).to(torch.uint8)
         torch.cuda.synchronize()
