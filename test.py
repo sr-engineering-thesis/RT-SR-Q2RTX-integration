@@ -1,23 +1,22 @@
-import ctypes, numpy as np, cv2, torch
+import ctypes, numpy as np, torch
 from fsrcnn.fsrcnn import FSRCNN_BIG_PRETRAIN
 from time import sleep, monotonic_ns
 from torchsr.models import carn, carn_m, edsr_baseline, edsr_r16f64, edsr_r32f256, ninasr_b0, rcan
-from fsrcnn.fsrcnn import FSRCNN_SMALL_PRETRAIN, FSRCNN_BIG_PRETRAIN
-from functools import partial
-import torch.nn as nn
+from fsrcnn.fsrcnn import FSRCNN_BIG_PRETRAIN
 from ninasr_small import NinaSR 
 import sys
 import cudaGLStream
 
-def fsrcnn_small(scale, pretrained):
-    model = FSRCNN_SMALL_PRETRAIN(scale=scale)
+def fsrcnn(scale, pretrained):
+    model = FSRCNN_BIG_PRETRAIN(scale=scale)
+    model.load_state_dict(torch.load("./fsrcnn/fsrcnn_finetuned_0.0036803.pth", map_location="cpu"))
     return model
 
 def ninasr_small(scale, pretrained):
     return NinaSR(8, 16, scale)
 
 MODELS = [
-    ("fsrcnn", fsrcnn_small),
+    ("fsrcnn", fsrcnn),
     ("carn", carn),
     ("ninasr_b0", ninasr_b0),
     ("small", ninasr_small),
@@ -54,10 +53,9 @@ def to_tensor_cuda_half(img):
     )
 
 for name, constructor in MODELS:
-    model = torch.compile(constructor(scale=4, pretrained = True).to(device).eval())
+    model = torch.compile(constructor(scale=2, pretrained = True).to(device).eval())
 
-
-    buffer_size = 200
+    buffer_size = 5000
     frame_times_no_upscaling = np.zeros(buffer_size, dtype=np.float32)
     frame_times_upscaling = np.zeros(buffer_size, dtype=np.float32)
     frame_index = 0  # circular index
@@ -72,7 +70,7 @@ for name, constructor in MODELS:
         with torch.no_grad():
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 output = model(input_tensor)
-        img_chw = output.squeeze(0)
+        img_chw = output.squeeze(0)[[2, 1, 0], ...]
         streamer.im_show(img_chw)
 
         frame_times_upscaling[frame_index] = (monotonic_ns() - start) / 1e6
