@@ -7,6 +7,7 @@ from functools import partial
 import torch.nn as nn
 from ninasr_small import NinaSR 
 import sys
+import cudaGLStream
 
 def fsrcnn_small(scale, pretrained):
     model = FSRCNN_SMALL_PRETRAIN(scale=scale)
@@ -31,7 +32,12 @@ libtest.get_frame_height.restype = ctypes.c_int
 libtest.get_frame_pitch.restype = ctypes.c_int
 libtest.get_gpu_to_cpu_time.restype = ctypes.c_int
 libtest.init()
+streamer = cudaGLStream.CudaGLStreamer()
+print(streamer)
 print("Starting testing", sys.stderr)
+
+target_width = 2560
+target_height = 1440
 device = torch.device("cuda")
 torch.backends.cudnn.benchmark = True
 height, width, pitch = libtest.get_frame_height(), libtest.get_frame_width(), libtest.get_frame_pitch()
@@ -54,21 +60,7 @@ for name, constructor in MODELS:
     buffer_size = 200
     frame_times_no_upscaling = np.zeros(buffer_size, dtype=np.float32)
     frame_times_upscaling = np.zeros(buffer_size, dtype=np.float32)
-
     frame_index = 0  # circular index
-
-    for _ in range(buffer_size * 2):
-        start = monotonic_ns()
-        libtest.frame_wait()
-        frame_ptr = libtest.get_frame()
-        frame_np = np.ctypeslib.as_array(frame_ptr, shape=(height, pitch // 4, 4))[:, :width, :3]
-        input_tensor = to_tensor_cuda_half(frame_np)
-        libtest.frame_post()
-        frame_times_no_upscaling[frame_index] = (monotonic_ns() - start) / 1e6
-        frame_index = (frame_index + 1) % buffer_size
-
-    frame_index = 0  # circular index
-
     for _ in range(buffer_size * 2):
         start = monotonic_ns()
         libtest.frame_wait()
@@ -80,20 +72,9 @@ for name, constructor in MODELS:
         with torch.no_grad():
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 output = model(input_tensor)
+        img_chw = output.squeeze(0)
+        streamer.im_show(img_chw)
 
-        torch.cuda.synchronize()
-        out_np = (
-            output[0]
-            .mul(255.0)
-            .clamp_(0, 255)
-            .permute(1, 2, 0)
-            .byte()
-            .cpu()
-            .numpy()
-        )
-        # cv2.imshow("Window Name", out_np)
-        # if cv2.waitKey(1) & 0xFF == ord("q"):
-        #     break
         frame_times_upscaling[frame_index] = (monotonic_ns() - start) / 1e6
         frame_index = (frame_index + 1) % buffer_size
 
