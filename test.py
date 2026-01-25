@@ -37,23 +37,19 @@ torch.backends.cudnn.benchmark = True
 height, width, pitch = libtest.get_frame_height(), libtest.get_frame_width(), libtest.get_frame_pitch()
 print(height, width, pitch, file=sys.stderr)
 print("model,no upscaling,no uspcaling std,upscaling,upscaling std")
+def to_tensor_cuda_half(img):
+    return (
+        torch.from_numpy(img)
+        .permute(2, 0, 1)
+        .unsqueeze(0)
+        .contiguous()
+        .to(device=device, dtype=torch.half, non_blocking=True)
+        .div_(255.0)
+    )
+
 for name, constructor in MODELS:
-    model = torch.compile(constructor(scale=2, pretrained = False).to(device).eval())
+    model = torch.compile(constructor(scale=4, pretrained = True).to(device).eval())
 
-    def to_tensor_optimized(frame_ptr, height, width, pitch):
-        address = ctypes.cast(frame_ptr, ctypes.c_void_p).value
-
-        buffer_size = height * pitch
-        frame_buffer = (ctypes.c_ubyte * buffer_size).from_address(address)
-        return (
-            torch.frombuffer(frame_buffer, dtype=torch.uint8)
-            .view(height, pitch // 4, 4)[:, :width, :3] # Remove padding/Alpha on CPU view
-            .to(device, non_blocking=True)               # Send 1-byte pixels to GPU
-            .permute(2, 0, 1)                            # HWC -> CHW (Instant on GPU)
-            .half()
-            .unsqueeze(0)                                # Add batch dim
-            .div_(255.0)                                 # Normalize in-place
-        )
 
     buffer_size = 200
     frame_times_no_upscaling = np.zeros(buffer_size, dtype=np.float32)
@@ -65,7 +61,8 @@ for name, constructor in MODELS:
         start = monotonic_ns()
         libtest.frame_wait()
         frame_ptr = libtest.get_frame()
-        input_tensor = to_tensor_optimized(frame_ptr, height, width, pitch)
+        frame_np = np.ctypeslib.as_array(frame_ptr, shape=(height, pitch // 4, 4))[:, :width, :3]
+        input_tensor = to_tensor_cuda_half(frame_np)
         libtest.frame_post()
         frame_times_no_upscaling[frame_index] = (monotonic_ns() - start) / 1e6
         frame_index = (frame_index + 1) % buffer_size
@@ -76,15 +73,27 @@ for name, constructor in MODELS:
         start = monotonic_ns()
         libtest.frame_wait()
         frame_ptr = libtest.get_frame()
-        input_tensor = to_tensor_optimized(frame_ptr, height, width, pitch)
+        frame_np = np.ctypeslib.as_array(frame_ptr, shape=(height, pitch // 4, 4))[:, :width, :3]
+        input_tensor = to_tensor_cuda_half(frame_np)
         libtest.frame_post()
 
         with torch.no_grad():
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 output = model(input_tensor)
 
-        processed = output.mul_(255).clamp_(0, 255).to(torch.uint8)
         torch.cuda.synchronize()
+        out_np = (
+            output[0]
+            .mul(255.0)
+            .clamp_(0, 255)
+            .permute(1, 2, 0)
+            .byte()
+            .cpu()
+            .numpy()
+        )
+        # cv2.imshow("Window Name", out_np)
+        # if cv2.waitKey(1) & 0xFF == ord("q"):
+        #     break
         frame_times_upscaling[frame_index] = (monotonic_ns() - start) / 1e6
         frame_index = (frame_index + 1) % buffer_size
 
