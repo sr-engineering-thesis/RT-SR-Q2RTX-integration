@@ -1,2 +1,2 @@
 all:
-	gcc -o test.so test.c -shared -fPIC -std=c99 -Wall
+	gcc -o libcomm.so comm.c -shared -fPIC -std=c99 -Wall

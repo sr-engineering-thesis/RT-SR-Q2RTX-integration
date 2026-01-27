@@ -24,13 +24,13 @@ MODELS = [
 ]
 
 sleep(5)
-libtest = ctypes.CDLL("./test.so")
-libtest.get_frame.restype = ctypes.POINTER(ctypes.c_uint8)
-libtest.get_frame_width.restype = ctypes.c_int
-libtest.get_frame_height.restype = ctypes.c_int
-libtest.get_frame_pitch.restype = ctypes.c_int
-libtest.get_gpu_to_cpu_time.restype = ctypes.c_int
-libtest.init()
+libcomm = ctypes.CDLL("./libcomm.so")
+libcomm.get_frame.restype = ctypes.POINTER(ctypes.c_uint8)
+libcomm.get_frame_width.restype = ctypes.c_int
+libcomm.get_frame_height.restype = ctypes.c_int
+libcomm.get_frame_pitch.restype = ctypes.c_int
+libcomm.get_gpu_to_cpu_time.restype = ctypes.c_int
+libcomm.init()
 streamer = cudaGLStream.CudaGLStreamer()
 print(streamer)
 print("Starting testing", sys.stderr)
@@ -39,7 +39,7 @@ target_width = 2560
 target_height = 1440
 device = torch.device("cuda")
 torch.backends.cudnn.benchmark = True
-height, width, pitch = libtest.get_frame_height(), libtest.get_frame_width(), libtest.get_frame_pitch()
+height, width, pitch = libcomm.get_frame_height(), libcomm.get_frame_width(), libcomm.get_frame_pitch()
 print(height, width, pitch, file=sys.stderr)
 print("model,no upscaling,no uspcaling std,upscaling,upscaling std")
 def to_tensor_cuda_half(img):
@@ -61,11 +61,11 @@ for name, constructor in MODELS:
     frame_index = 0  # circular index
     for _ in range(buffer_size * 2):
         start = monotonic_ns()
-        libtest.frame_wait()
-        frame_ptr = libtest.get_frame()
+        libcomm.frame_wait()
+        frame_ptr = libcomm.get_frame()
         frame_np = np.ctypeslib.as_array(frame_ptr, shape=(height, pitch // 4, 4))[:, :width, :3]
         input_tensor = to_tensor_cuda_half(frame_np)
-        libtest.frame_post()
+        libcomm.frame_post()
 
         with torch.no_grad():
             with torch.autocast(device_type="cuda", dtype=torch.float16):
