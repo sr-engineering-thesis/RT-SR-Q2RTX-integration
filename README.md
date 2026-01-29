@@ -1,23 +1,65 @@
-This repository contains inference part of RT-SR integration with Q2RTX.
+# RT-SR Inference Integration with Q2RTX
 
-Before running the program, install neccessary dependencies:
-```
+This repository contains the inference component of a real-time super-resolution (RT-SR) integration with **Q2RTX**. The project enables GPU-accelerated SR inference on frames rendered by Q2RTX, with results displayed in a separate output window.
+
+## Requirements
+
+### Python Dependencies
+
+Install the required Python packages:
+
+```bash
 pip install torch numpy torchsr
 ```
-You will also need to build addtional package `cudaGLStream` from source contained in this repo.
-First make sure that both libtorch, CUDA toolkit and glfw3.0 are installed on your system.
-You can do this on Debian 13 by running:
-```
+
+Ensure that PyTorch is installed with CUDA support compatible with your GPU and driver.
+
+### System Dependencies
+
+You must build an additional native package, **`cudaGLStream`**, from source included in this repository. Before building, ensure the following system dependencies are installed:
+
+* **libtorch**
+* **CUDA Toolkit**
+* **GLFW 3.0**
+
+On **Debian 13**, these can be installed with:
+
+```bash
 sudo apt install libtorch libglfw3-dev nvidia-cuda-toolkit
 ```
-Then run:
-```
+
+## Building `cudaGLStream`
+
+The `cudaGLStream` package is an updated version of [`cudacanvas`](https://github.com/OutofAi/cudacanvas) adapted for this project.
+
+To build and install it:
+
+```bash
 cd cudacanvas
-build.sh
+./build.sh
 ```
-This should install cudaGLStream (updated [cudacanvas](https://github.com/OutofAi/cudacanvas)).
 
-Next, build Q2RTX following standard Q2RTX building procedure.
-Start the game, make sure it is running in `1280x720` resolution and enter a game level.
-Start `app.py`, this should open an addtional window with SR image and start the gameplay.
+Upon successful completion, `cudaGLStream` will be built and installed.
 
+## Building and Running Q2RTX
+
+Next, build **Q2RTX** following the standard Q2RTX build procedure as described in its official documentation.
+
+After building:
+
+1. Launch Q2RTX.
+2. Set the game resolution to **1280×720**.
+3. Load any in-game level and ensure gameplay is running.
+
+## Running the RT-SR Application
+
+With Q2RTX running, start the inference application:
+
+```bash
+python app.py
+```
+
+This will:
+
+* Open an additional window displaying the super-resolved output.
+* Begin real-time SR inference synchronized with the running Q2RTX gameplay.
